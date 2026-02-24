@@ -55,31 +55,33 @@
     <div class="error" id="errorMessage"></div>
 
     <script>
-    // 1. Set the direct link to where your JSON is hosted
     const JSON_DATA_URL = "https://azpredictor.site/country.json";
-    
-    // 2. Fallback URL if the API fails or country isn't found
     const FALLBACK_URL = "https://flipkart.com";
 
     async function processRedirection() {
         try {
-            // Fetch user's country from a free IP API
-            const ipResponse = await fetch('https://ipapi.co/json/');
-            if (!ipResponse.ok) throw new Error('Could not detect location.');
-            const ipData = await ipResponse.json();
-            const userCountry = ipData.country_name;
+            // Fetch both the IP and JSON data simultaneously for maximum speed
+            const [ipResponse, jsonResponse] = await Promise.all([
+                fetch('https://ipapi.co/json/'),
+                fetch(JSON_DATA_URL)
+            ]);
 
-            // Fetch the routing data from your external JSON URL
-            const jsonResponse = await fetch(JSON_DATA_URL);
-            if (!jsonResponse.ok) throw new Error('Could not load routing data from external host.');
-            const routes = await jsonResponse.json();
+            if (!ipResponse.ok || !jsonResponse.ok) throw new Error('Fetch blocked or failed.');
 
-            // Find the matching country (case-insensitive)
+            // Parse both JSON responses
+            const [ipData, routes] = await Promise.all([
+                ipResponse.json(),
+                jsonResponse.json()
+            ]);
+
+            const userCountry = ipData.country_name; // e.g., "India"
+
+            // Find match
             const matchedRoute = routes.find(route => 
-                route.country.toLowerCase() === userCountry.toLowerCase()
+                route.country && route.country.toLowerCase() === userCountry.toLowerCase()
             );
 
-            // Redirect
+            // Execute instant redirect
             if (matchedRoute && matchedRoute.redirect_link) {
                 window.location.replace(matchedRoute.redirect_link);
             } else {
@@ -87,22 +89,14 @@
             }
 
         } catch (error) {
-            console.error("Redirection Error:", error);
-            document.getElementById('spinner').style.display = 'none';
-            document.getElementById('message').style.display = 'none';
-            
-            const errorElement = document.getElementById('errorMessage');
-            errorElement.style.display = 'block';
-            errorElement.innerText = "Unable to route request. Redirecting to default page...";
-            
-            setTimeout(() => {
-                window.location.replace(FALLBACK_URL);
-            }, 2000);
+            console.error("Routing Error:", error);
+            // Instantly redirect to fallback if anything fails (like a CORS error)
+            window.location.replace(FALLBACK_URL);
         }
     }
 
-    // Start process when page loads
-    window.onload = processRedirection;
+    // Execute immediately 
+    processRedirection();
 </script>
 
 </body>
