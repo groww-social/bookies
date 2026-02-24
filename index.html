@@ -5,65 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routing...</title>
     <style>
-        body { margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background-color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1d1d1f; }
-        .spinner { width: 40px; height: 40px; border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #007aff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .message { font-size: 17px; font-weight: 500; letter-spacing: -0.022em; text-align: center; padding: 0 20px;}
+        body { 
+            background-color: #f5f5f7; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            color: #1d1d1f; 
+        }
+        #msg { font-weight: 500; font-size: 17px; }
     </style>
 </head>
 <body>
-    <div class="spinner" id="spinner"></div>
-    <div class="message" id="message">Finding your destination...</div>
+    
+    <div id="msg"></div>
 
-   <script>
-    const PUBLIC_API_URL = "https://azpredictor.site/bookies/route.php";
+    <script>
+        const PUBLIC_API_URL = "https://azpredictor.site/bookies/route.php";
 
-    async function processRedirection() {
-        try { 
-            // 1. Fetch IP 
-            const ipResponse = await fetch('https://ipapi.co/json/');
-            if (!ipResponse.ok) throw new Error(`IP API Blocked (Error ${ipResponse.status})`);
-            const ipData = await ipResponse.json();
-            const userCountry = ipData.country_name;
+        async function executeInstantRedirect() {
+            try {
+                // Fetch IP and Routing Data simultaneously using a faster, unmetered API
+                const [ipResponse, jsonResponse] = await Promise.all([
+                    fetch('https://get.geojs.io/v1/ip/country.json'),
+                    fetch(PUBLIC_API_URL)
+                ]);
 
-            // 2. Fetch Routes
-            const jsonResponse = await fetch(PUBLIC_API_URL);
-            if (!jsonResponse.ok) throw new Error(`cPanel blocked the request (Error ${jsonResponse.status})`);
-            const routes = await jsonResponse.json();
+                if (!ipResponse.ok || !jsonResponse.ok) throw new Error('Network failure');
 
-            // 3. Match Route
-            const matchedRoute = routes.find(route => 
-                route.country && route.country.toLowerCase() === userCountry.toLowerCase()
-            );
+                const [ipData, routes] = await Promise.all([
+                    ipResponse.json(),
+                    jsonResponse.json()
+                ]);
 
-            if (matchedRoute && matchedRoute.redirect_link) {
-                // Send tracking request
-                fetch(PUBLIC_API_URL, {
-                    method: 'POST',
-                    keepalive: true, 
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'increment', country: matchedRoute.country })
-                }).catch(e => console.error(e));
+                // GeoJS returns the country name in the 'name' property
+                const userCountry = ipData.name; 
 
-                window.location.replace(matchedRoute.redirect_link);
-            } else {
-                document.getElementById('spinner').style.display = 'none';
-                document.getElementById('message').innerText = `No link found for: ${userCountry}`;
+                // Find the matching route (ignores uppercase/lowercase differences)
+                const matchedRoute = routes.find(route => 
+                    route.country && route.country.toLowerCase() === userCountry.toLowerCase()
+                );
+
+                if (matchedRoute && matchedRoute.redirect_link) {
+                    
+                    // Fire the tracking ping in the background. 
+                    // We DO NOT 'await' this. It happens silently without slowing down the page.
+                    fetch(PUBLIC_API_URL, {
+                        method: 'POST',
+                        keepalive: true,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'increment', country: matchedRoute.country })
+                    }).catch(() => {}); // Ignore tracking errors to ensure redirect happens
+
+                    // INSTANT REDIRECT
+                    window.location.replace(matchedRoute.redirect_link);
+                    
+                } else {
+                    document.getElementById('msg').innerText = "Content not available in your region.";
+                }
+
+            } catch (error) {
+                document.getElementById('msg').innerText = "Connection blocked. Please disable adblockers.";
             }
-
-        } catch (error) {
-            // Print the exact error to the screen
-            document.getElementById('spinner').style.display = 'none';
-            document.getElementById('message').innerHTML = `
-                <span style="color: #ff3b30;">Error:</span> ${error.message} <br><br>
-                <span style="font-size: 13px; color: #86868b;">Are you using an Adblocker? Check console for details.</span>
-            `;
-            console.error("Detailed Error:", error);
         }
-    }
 
-    processRedirection();
-</script>
-
+        // Execute immediately before the rest of the page even finishes thinking
+        executeInstantRedirect();
+    </script>
 </body>
 </html>
