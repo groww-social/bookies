@@ -8,27 +8,26 @@
         body { margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background-color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1d1d1f; }
         .spinner { width: 40px; height: 40px; border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #007aff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .message { font-size: 17px; font-weight: 500; letter-spacing: -0.022em; }
+        .message { font-size: 17px; font-weight: 500; letter-spacing: -0.022em; text-align: center; padding: 0 20px;}
     </style>
 </head>
 <body>
-    <div class="spinner"></div>
-    <div class="message">Finding your destination...</div>
+    <div class="spinner" id="spinner"></div>
+    <div class="message" id="message">Finding your destination...</div>
 
     <script>
-        // 1. Point this to your new combined API
-        const API_URL = "https://azpredictor.site/bookies/admin.php";
-        const FALLBACK_URL = "https://flipkart.com"; // Default URL
+        // Only points to the public tracking file. The admin file remains a secret.
+        const PUBLIC_API_URL = "https://azpredictor.site/bookies/route.php";
 
         async function processRedirection() {
             try {
-                // Fetch IP and Routing Data simultaneously 
+                // Fetch IP and Routing Data simultaneously for maximum speed
                 const [ipResponse, jsonResponse] = await Promise.all([
                     fetch('https://ipapi.co/json/'),
-                    fetch(`${API_URL}?api=1`) // Add ?api=1 to trigger the JSON output
+                    fetch(PUBLIC_API_URL) 
                 ]);
 
-                if (!ipResponse.ok || !jsonResponse.ok) throw new Error('Fetch failed.');
+                if (!ipResponse.ok || !jsonResponse.ok) throw new Error('Network response was not ok');
 
                 const [ipData, routes] = await Promise.all([
                     ipResponse.json(),
@@ -43,25 +42,26 @@
                 );
 
                 if (matchedRoute && matchedRoute.redirect_link) {
-                    
-                    // Fire tracking update to cPanel in the background (does not slow down redirect)
-                    fetch(API_URL, {
+                    // Fire tracking update to cPanel in the background
+                    fetch(PUBLIC_API_URL, {
                         method: 'POST',
-                        keepalive: true, // Ensures request finishes even while page redirects
+                        keepalive: true, 
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'increment', country: matchedRoute.country })
-                    }).catch(e => console.error("Tracking blocked", e));
+                    }).catch(e => console.error(e));
 
                     // Execute instant redirect
                     window.location.replace(matchedRoute.redirect_link);
-
                 } else {
-                    window.location.replace(FALLBACK_URL);
+                    // NO FALLBACK: Stop spinner and show message
+                    document.getElementById('spinner').style.display = 'none';
+                    document.getElementById('message').innerText = "Content is not available in your region.";
                 }
 
             } catch (error) {
-                console.error("Routing Error:", error);
-                window.location.replace(FALLBACK_URL);
+                // Failsafe: Stop spinner if user has aggressive adblockers blocking the IP API
+                document.getElementById('spinner').style.display = 'none';
+                document.getElementById('message').innerText = "Unable to route request.";
             }
         }
 
